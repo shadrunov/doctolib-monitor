@@ -25,3 +25,6 @@ Run tests locally with:
 ```sh
 python3 -m unittest -v
 ```
+
+A separate Yandex Cloud Functions package and deployment guide are available
+in [`yandex_function/`](yandex_function/README.md).
