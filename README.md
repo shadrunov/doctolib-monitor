@@ -13,7 +13,7 @@ is invalid. A recovery message is sent when valid HTTP 200 responses resume.
 The workflow needs these encrypted repository secrets:
 
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token
-- `TELEGRAM_CHAT_ID`: numeric chat ID obtained after starting the bot
+- `TELEGRAM_CHAT_IDS`: comma-separated numeric chat IDs for every recipient
 
 The local `request` and `token` files are intentionally ignored because they
 contain credentials. GitHub schedules are best-effort and can occasionally run

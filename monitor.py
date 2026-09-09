@@ -89,6 +89,14 @@ def send_telegram(token: str, chat_id: str, message: str) -> None:
         raise RuntimeError(f"Telegram rejected the message: {payload}")
 
 
+def telegram_chat_ids() -> list[str]:
+    raw = os.environ["TELEGRAM_CHAT_IDS"]
+    chat_ids = [item.strip() for item in raw.split(",") if item.strip()]
+    if not chat_ids:
+        raise ValueError("TELEGRAM_CHAT_IDS must contain at least one chat ID")
+    return chat_ids
+
+
 def evaluate(
     previous: dict[str, Any], status: int, body: bytes, curl_error: str
 ) -> tuple[dict[str, Any], list[str]]:
@@ -166,9 +174,9 @@ def main() -> int:
                 print(f"Would notify: {message}")
         else:
             token = os.environ["TELEGRAM_BOT_TOKEN"]
-            chat_id = os.environ["TELEGRAM_CHAT_ID"]
             for message in messages:
-                send_telegram(token, chat_id, message)
+                for chat_id in telegram_chat_ids():
+                    send_telegram(token, chat_id, message)
     # Persist only after every required notification succeeds. If Telegram is
     # temporarily unavailable, the failed run will retry the alert next time.
     if changed:

@@ -17,10 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Restore monitor state
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .state
           key: doctolib-state-${{ github.run_id }}
@@ -31,13 +31,13 @@ jobs:
         id: monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
         run: |
           python3 monitor.py --state-file .state/state.json
 
       - name: Save monitor state when changed
         if: steps.monitor.outputs.state_changed == 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .state
           key: doctolib-state-${{ github.run_id }}

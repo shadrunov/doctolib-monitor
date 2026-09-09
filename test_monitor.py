@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from monitor import evaluate
+from monitor import evaluate, telegram_chat_ids
 
 
 def response(slot: str) -> bytes:
@@ -8,6 +9,10 @@ def response(slot: str) -> bytes:
 
 
 class EvaluateTests(unittest.TestCase):
+    def test_multiple_telegram_chat_ids(self):
+        with patch.dict("os.environ", {"TELEGRAM_CHAT_IDS": "123, 456"}):
+            self.assertEqual(telegram_chat_ids(), ["123", "456"])
+
     def test_first_success_sets_dynamic_baseline_without_alert(self):
         state, messages = evaluate({}, 200, response("2026-10-08T16:45:00+02:00"), "")
         self.assertEqual(state["next_slot"], "2026-10-08T16:45:00+02:00")
