@@ -1,5 +1,6 @@
 request
 token
+github_token
 .state/
 __pycache__/
 *.pyc
