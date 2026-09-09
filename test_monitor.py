@@ -2,7 +2,15 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from monitor import evaluate, fetch_doctolib, send_telegram, telegram_chat_ids
+from monitor import (
+    Notification,
+    TelegramRecipientUnavailable,
+    evaluate,
+    fetch_doctolib,
+    send_telegram,
+    send_telegram_to_all,
+    telegram_chat_ids,
+)
 
 
 def response(slot: str) -> bytes:
@@ -132,8 +140,11 @@ class RequestRetryTests(unittest.TestCase):
     @patch("monitor.time.sleep")
     def test_telegram_retries_http_errors_and_stays_silent(self, sleep):
         failed = Mock()
+        failed.status_code = 403
+        failed.json.return_value = {"ok": False, "description": "Forbidden gateway"}
         failed.raise_for_status.side_effect = RuntimeError("HTTP 403")
         succeeded = Mock()
+        succeeded.status_code = 200
         succeeded.raise_for_status.return_value = None
         succeeded.json.return_value = {"ok": True}
         requests = SimpleNamespace(
@@ -149,6 +160,18 @@ class RequestRetryTests(unittest.TestCase):
         self.assertEqual(
             requests.post.call_args.kwargs["data"]["disable_notification"], "true"
         )
+
+    @patch.dict("os.environ", {"TELEGRAM_CHAT_IDS": "blocked,active"})
+    @patch("monitor.send_telegram")
+    def test_blocked_chat_does_not_prevent_other_delivery(self, send):
+        send.side_effect = [TelegramRecipientUnavailable("blocked"), None]
+
+        sent = send_telegram_to_all(
+            "token", Notification("message", silent=True)
+        )
+
+        self.assertEqual(sent, 1)
+        self.assertEqual(send.call_count, 2)
 
 
 if __name__ == "__main__":

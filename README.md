@@ -12,6 +12,8 @@ Doctolib and Telegram requests are attempted up to three times. One silent
 failure alert is sent after 10 consecutive scheduled checks end with a non-200
 response. Invalid HTTP 200 responses and recovery after an alerted failure are
 also silent. Earlier-slot alerts use a normal Telegram notification.
+One user blocking the bot is logged and skipped without preventing delivery to
+the other configured chats.
 
 The workflow needs these encrypted repository secrets:
 

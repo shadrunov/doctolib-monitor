@@ -61,16 +61,18 @@ jobs:
         run: |
           python3 - <<'PY'
           import os
-          from monitor import send_telegram, telegram_chat_ids
+          from monitor import Notification, send_telegram_to_all
 
           token = os.environ["TELEGRAM_BOT_TOKEN"]
-          for chat_id in telegram_chat_ids():
-              send_telegram(
-                  token,
-                  chat_id,
+          sent = send_telegram_to_all(
+              token,
+              Notification(
                   "✅ Doctolib monitor GitHub delivery test succeeded.",
                   silent=True,
-              )
+              ),
+          )
+          if sent == 0:
+              raise RuntimeError("No configured Telegram chat accepted the test message")
           PY
 
       - name: Save monitor state when changed

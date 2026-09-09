@@ -35,6 +35,10 @@ class Notification:
     silent: bool = False
 
 
+class TelegramRecipientUnavailable(RuntimeError):
+    """The destination permanently cannot receive messages from this bot."""
+
+
 def load_state(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -122,17 +126,37 @@ def send_telegram(
                 impersonate="chrome",
                 timeout=30,
             )
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = {}
+            description = str(payload.get("description", ""))
+            if response.status_code == 403 and "blocked by the user" in description:
+                raise TelegramRecipientUnavailable(description)
             response.raise_for_status()
-            payload = response.json()
             if not payload.get("ok"):
                 raise RuntimeError(f"Telegram rejected the message: {payload}")
             return
+        except TelegramRecipientUnavailable:
+            raise
         except (requests.errors.RequestsError, RuntimeError) as exc:
             last_error = exc
         if attempt + 1 < attempts:
             time.sleep(RETRY_DELAYS_SECONDS[min(attempt, len(RETRY_DELAYS_SECONDS) - 1)])
     assert last_error is not None
     raise last_error
+
+
+def send_telegram_to_all(token: str, notification: Notification) -> int:
+    """Deliver to every reachable chat without one blocked user stopping others."""
+    sent = 0
+    for chat_id in telegram_chat_ids():
+        try:
+            send_telegram(token, chat_id, notification.message, notification.silent)
+            sent += 1
+        except TelegramRecipientUnavailable as exc:
+            print(f"Skipping unavailable Telegram chat {chat_id}: {exc}")
+    return sent
 
 
 def telegram_chat_ids() -> list[str]:
@@ -269,8 +293,7 @@ def main() -> int:
         else:
             token = os.environ["TELEGRAM_BOT_TOKEN"]
             for message in messages:
-                for chat_id in telegram_chat_ids():
-                    send_telegram(token, chat_id, message.message, message.silent)
+                send_telegram_to_all(token, message)
     # Persist only after every required notification succeeds. If Telegram is
     # temporarily unavailable, the failed run will retry the alert next time.
     if changed:
