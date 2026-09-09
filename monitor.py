@@ -12,7 +12,6 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
 from zoneinfo import ZoneInfo
 
 
@@ -54,27 +53,35 @@ def parse_slot(value: str) -> datetime:
 
 
 def fetch_doctolib() -> tuple[int, bytes, str]:
-    """Perform the supplied Doctolib request using Python's standard library."""
+    """Perform the request with a Chrome-compatible TLS/HTTP fingerprint."""
+    from curl_cffi import requests
+
     params = dict(DOCTOLIB_PARAMS)
     params["start_date"] = datetime.now(ZoneInfo("Europe/Berlin")).date().isoformat()
-    url = f"{DOCTOLIB_URL}?{urllib.parse.urlencode(params)}"
-    request = urllib.request.Request(
-        url,
-        headers={
+    headers = {
             "Accept": "application/json,text/plain,*/*",
             "Accept-Language": "en-US,en;q=0.9",
-            "User-Agent": (
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
-            ),
-        },
-    )
+            "Cache-Control": "max-age=0",
+            "Priority": "u=0, i",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+    }
+    cookie = os.environ.get("DOCTOLIB_COOKIE", "").strip()
+    if cookie:
+        headers["Cookie"] = cookie
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            return response.status, response.read(), ""
-    except HTTPError as exc:
-        return exc.code, exc.read(), str(exc.reason)
-    except (URLError, TimeoutError, OSError) as exc:
+        response = requests.get(
+            DOCTOLIB_URL,
+            params=params,
+            headers=headers,
+            impersonate="chrome",
+            timeout=60,
+        )
+        return response.status_code, response.content, response.reason
+    except requests.errors.RequestsError as exc:
         return 0, b"", str(exc)
 
 
