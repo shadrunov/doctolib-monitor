@@ -8,6 +8,8 @@ import json
 import os
 import re
 import tempfile
+import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,15 @@ DOCTOLIB_PARAMS = {
     "telehealth": "false",
     "limit": "7",
 }
+DEFAULT_FAILURE_THRESHOLD = 10
+DEFAULT_REQUEST_ATTEMPTS = 3
+RETRY_DELAYS_SECONDS = (2, 5)
+
+
+@dataclass(frozen=True)
+class Notification:
+    message: str
+    silent: bool = False
 
 
 def load_state(path: Path) -> dict[str, Any]:
@@ -68,55 +79,101 @@ def fetch_doctolib() -> tuple[int, bytes, str]:
             "Sec-Fetch-User": "?1",
             "Upgrade-Insecure-Requests": "1",
     }
-    try:
-        response = requests.get(
-            DOCTOLIB_URL,
-            params=params,
-            headers=headers,
-            impersonate="chrome",
-            timeout=60,
-        )
-        return response.status_code, response.content, response.reason
-    except requests.errors.RequestsError as exc:
-        return 0, b"", str(exc)
+    attempts = int(os.environ.get("REQUEST_ATTEMPTS", str(DEFAULT_REQUEST_ATTEMPTS)))
+    if attempts < 1:
+        raise ValueError("REQUEST_ATTEMPTS must be at least 1")
+    result: tuple[int, bytes, str] = (0, b"", "request was not attempted")
+    for attempt in range(attempts):
+        try:
+            response = requests.get(
+                DOCTOLIB_URL,
+                params=params,
+                headers=headers,
+                impersonate="chrome",
+                timeout=60,
+            )
+            result = (response.status_code, response.content, response.reason)
+            if response.status_code == 200:
+                return result
+        except requests.errors.RequestsError as exc:
+            result = (0, b"", str(exc))
+        if attempt + 1 < attempts:
+            time.sleep(RETRY_DELAYS_SECONDS[min(attempt, len(RETRY_DELAYS_SECONDS) - 1)])
+    return result
 
 
-def send_telegram(token: str, chat_id: str, message: str) -> None:
+def send_telegram(
+    token: str, chat_id: str, message: str, silent: bool = False
+) -> None:
     from curl_cffi import requests
 
-    response = requests.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        data={"chat_id": chat_id, "text": message},
-        impersonate="chrome",
-        timeout=30,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    if not payload.get("ok"):
-        raise RuntimeError(f"Telegram rejected the message: {payload}")
+    attempts = int(os.environ.get("REQUEST_ATTEMPTS", str(DEFAULT_REQUEST_ATTEMPTS)))
+    if attempts < 1:
+        raise ValueError("REQUEST_ATTEMPTS must be at least 1")
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            response = requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                data={
+                    "chat_id": chat_id,
+                    "text": message,
+                    "disable_notification": "true" if silent else "false",
+                },
+                impersonate="chrome",
+                timeout=30,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not payload.get("ok"):
+                raise RuntimeError(f"Telegram rejected the message: {payload}")
+            return
+        except (requests.errors.RequestsError, RuntimeError) as exc:
+            last_error = exc
+        if attempt + 1 < attempts:
+            time.sleep(RETRY_DELAYS_SECONDS[min(attempt, len(RETRY_DELAYS_SECONDS) - 1)])
+    assert last_error is not None
+    raise last_error
 
 
-def send_github_relay(token: str, repository: str, message: str) -> None:
-    """Ask GitHub Actions to deliver a Telegram alert from outside Yandex."""
+def send_github_dispatch(
+    token: str, repository: str, event_type: str, payload: dict[str, Any]
+) -> None:
+    """Ask GitHub Actions to run work through a repository dispatch event."""
     from curl_cffi import requests
 
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("GITHUB_RELAY_REPOSITORY must be owner/repository")
-    response = requests.post(
-        f"https://api.github.com/repos/{repository}/dispatches",
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        json={
-            "event_type": "doctolib_alert",
-            "client_payload": {"message": message},
-        },
-        impersonate="chrome",
-        timeout=30,
-    )
-    response.raise_for_status()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", event_type):
+        raise ValueError("GitHub dispatch event_type is invalid")
+    attempts = int(os.environ.get("REQUEST_ATTEMPTS", str(DEFAULT_REQUEST_ATTEMPTS)))
+    if attempts < 1:
+        raise ValueError("REQUEST_ATTEMPTS must be at least 1")
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            response = requests.post(
+                f"https://api.github.com/repos/{repository}/dispatches",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {token}",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                json={
+                    "event_type": event_type,
+                    "client_payload": payload,
+                },
+                impersonate="chrome",
+                timeout=30,
+            )
+            response.raise_for_status()
+            return
+        except requests.errors.RequestsError as exc:
+            last_error = exc
+        if attempt + 1 < attempts:
+            time.sleep(RETRY_DELAYS_SECONDS[min(attempt, len(RETRY_DELAYS_SECONDS) - 1)])
+    assert last_error is not None
+    raise last_error
 
 
 def telegram_chat_ids() -> list[str]:
@@ -127,19 +184,50 @@ def telegram_chat_ids() -> list[str]:
     return chat_ids
 
 
+def failure_threshold() -> int:
+    raw = os.environ.get("FAILURE_THRESHOLD", str(DEFAULT_FAILURE_THRESHOLD))
+    try:
+        threshold = int(raw)
+    except ValueError as exc:
+        raise ValueError("FAILURE_THRESHOLD must be an integer") from exc
+    if threshold < 1:
+        raise ValueError("FAILURE_THRESHOLD must be at least 1")
+    return threshold
+
+
 def evaluate(
-    previous: dict[str, Any], status: int, body: bytes, curl_error: str
-) -> tuple[dict[str, Any], list[str]]:
+    previous: dict[str, Any],
+    status: int,
+    body: bytes,
+    curl_error: str,
+    non_200_threshold: int = DEFAULT_FAILURE_THRESHOLD,
+) -> tuple[dict[str, Any], list[Notification]]:
+    if non_200_threshold < 1:
+        raise ValueError("non_200_threshold must be at least 1")
     state = dict(previous)
-    messages: list[str] = []
+    messages: list[Notification] = []
     previous_health = previous.get("health")
 
     if status != 200:
+        previous_count = previous.get("consecutive_non_200", 0)
+        if not isinstance(previous_count, int) or previous_count < 0:
+            previous_count = 0
+        failure_count = previous_count + 1
         state["health"] = "error"
         state["http_status"] = status
-        if previous_health != "error" or previous.get("http_status") != status:
+        state["consecutive_non_200"] = failure_count
+        state["failure_alerted"] = bool(previous.get("failure_alerted"))
+        state.pop("error", None)
+        if failure_count >= non_200_threshold and not state["failure_alerted"]:
             detail = f" ({curl_error})" if curl_error else ""
-            messages.append(f"⚠️ Doctolib request failed: HTTP {status or 'unknown'}{detail}")
+            messages.append(
+                Notification(
+                    "⚠️ Doctolib request failed "
+                    f"{failure_count} consecutive times: HTTP {status or 'unknown'}{detail}",
+                    silent=True,
+                )
+            )
+            state["failure_alerted"] = True
         return state, messages
 
     try:
@@ -151,22 +239,37 @@ def evaluate(
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         state["health"] = "error"
         state["http_status"] = 200
+        state["consecutive_non_200"] = 0
+        state["failure_alerted"] = False
         error_kind = f"invalid response: {exc}"
         state["error"] = error_kind
         if previous_health != "error" or previous.get("error") != error_kind:
-            messages.append(f"⚠️ Doctolib returned HTTP 200 but {error_kind}")
+            messages.append(
+                Notification(
+                    f"⚠️ Doctolib returned HTTP 200 but {error_kind}", silent=True
+                )
+            )
         return state, messages
 
-    if previous_health == "error":
-        messages.append("✅ Doctolib request recovered and returns HTTP 200 again.")
+    if previous_health == "error" and (
+        previous.get("failure_alerted") or previous.get("http_status") == 200
+    ):
+        messages.append(
+            Notification(
+                "✅ Doctolib request recovered and returns HTTP 200 again.",
+                silent=True,
+            )
+        )
 
     previous_slot = previous.get("next_slot")
     if isinstance(previous_slot, str):
         try:
             if current_dt < parse_slot(previous_slot):
                 messages.append(
-                    "🎉 Earlier Doctolib slot found!\n"
-                    f"New: {next_slot}\nPrevious: {previous_slot}"
+                    Notification(
+                        "🎉 Earlier Doctolib slot found!\n"
+                        f"New: {next_slot}\nPrevious: {previous_slot}"
+                    )
                 )
         except ValueError:
             pass
@@ -191,7 +294,9 @@ def main() -> int:
     previous = load_state(args.state_file)
     status, body, curl_error = fetch_doctolib()
 
-    current, messages = evaluate(previous, status, body, curl_error)
+    current, messages = evaluate(
+        previous, status, body, curl_error, failure_threshold()
+    )
     changed = current != previous
 
     print(
@@ -201,12 +306,12 @@ def main() -> int:
     if messages:
         if args.dry_run:
             for message in messages:
-                print(f"Would notify: {message}")
+                print(f"Would notify: {message.message}")
         else:
             token = os.environ["TELEGRAM_BOT_TOKEN"]
             for message in messages:
                 for chat_id in telegram_chat_ids():
-                    send_telegram(token, chat_id, message)
+                    send_telegram(token, chat_id, message.message, message.silent)
     # Persist only after every required notification succeeds. If Telegram is
     # temporarily unavailable, the failed run will retry the alert next time.
     if changed:

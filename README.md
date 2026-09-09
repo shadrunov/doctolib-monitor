@@ -1,15 +1,17 @@
 # Doctolib Telegram monitor
 
-This repository performs the supplied Doctolib request directly in Python on
-GitHub Actions every five minutes. It uses a Chrome-compatible TLS and HTTP
-fingerprint. Its `start_date` is generated in the Berlin
-timezone on every run. The first successful run records the current `next_slot` as a
-dynamic baseline. A Telegram message is sent whenever a subsequent successful
-response contains a strictly earlier slot.
+This repository performs the supplied Doctolib request in GitHub Actions. A
+Yandex Cloud timer invokes a small function every five minutes; that function
+dispatches the GitHub workflow. The monitor uses a Chrome-compatible TLS and
+HTTP fingerprint and generates `start_date` in the Berlin timezone on every
+run. The first successful run records the current `next_slot` as a dynamic
+baseline. A Telegram message is sent whenever a subsequent successful response
+contains a strictly earlier slot.
 
-It also sends one alert when the request changes from healthy to an HTTP error
-(including HTTP 429), when the error status changes, or when an HTTP 200 response
-is invalid. A recovery message is sent when valid HTTP 200 responses resume.
+Doctolib and Telegram requests are attempted up to three times. One silent
+failure alert is sent after 10 consecutive scheduled checks end with a non-200
+response. Invalid HTTP 200 responses and recovery after an alerted failure are
+also silent. Earlier-slot alerts use a normal Telegram notification.
 
 The workflow needs these encrypted repository secrets:
 
@@ -17,8 +19,8 @@ The workflow needs these encrypted repository secrets:
 - `TELEGRAM_CHAT_IDS`: comma-separated numeric chat IDs for every recipient
 
 The local `request` and `token` files are intentionally ignored because they
-contain credentials. GitHub schedules are best-effort and can occasionally run
-later than the requested five-minute interval.
+contain credentials. The workflow has no GitHub cron schedule; Yandex Cloud is
+the scheduler.
 
 Run tests locally with:
 

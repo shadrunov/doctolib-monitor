@@ -2,8 +2,14 @@ name: Monitor Doctolib slot
 
 on:
   workflow_dispatch:
+    inputs:
+      telegram_test:
+        description: Send a silent Telegram delivery test instead of checking Doctolib
+        required: false
+        default: false
+        type: boolean
   repository_dispatch:
-    types: [doctolib_alert]
+    types: [doctolib_check]
 
 permissions:
   contents: read
@@ -14,9 +20,8 @@ concurrency:
 
 jobs:
   monitor:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v7
 
@@ -38,11 +43,35 @@ jobs:
 
       - name: Run monitor
         id: monitor
+        if: github.event_name != 'workflow_dispatch' || inputs.telegram_test != true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
+          FAILURE_THRESHOLD: "10"
+          REQUEST_ATTEMPTS: "3"
         run: |
           python3 monitor.py --state-file .state/state.json
+
+      - name: Test Telegram delivery
+        if: github.event_name == 'workflow_dispatch' && inputs.telegram_test == true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
+          REQUEST_ATTEMPTS: "3"
+        run: |
+          python3 - <<'PY'
+          import os
+          from monitor import send_telegram, telegram_chat_ids
+
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          for chat_id in telegram_chat_ids():
+              send_telegram(
+                  token,
+                  chat_id,
+                  "✅ Doctolib monitor GitHub delivery test succeeded.",
+                  silent=True,
+              )
+          PY
 
       - name: Save monitor state when changed
         if: steps.monitor.outputs.state_changed == 'true'
@@ -50,36 +79,3 @@ jobs:
         with:
           path: .state
           key: doctolib-state-${{ github.run_id }}
-
-  telegram-relay:
-    if: github.event_name == 'repository_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Send alert to every configured Telegram chat
-        env:
-          ALERT_MESSAGE: ${{ github.event.client_payload.message }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import urllib.parse
-          import urllib.request
-
-          token = os.environ["TELEGRAM_BOT_TOKEN"]
-          message = os.environ["ALERT_MESSAGE"]
-          chat_ids = [item.strip() for item in os.environ["TELEGRAM_CHAT_IDS"].split(",") if item.strip()]
-          for chat_id in chat_ids:
-              data = urllib.parse.urlencode({"chat_id": chat_id, "text": message}).encode()
-              request = urllib.request.Request(
-                  f"https://api.telegram.org/bot{token}/sendMessage",
-                  data=data,
-                  method="POST",
-              )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  payload = json.load(response)
-              if not payload.get("ok"):
-                  raise RuntimeError(f"Telegram rejected message for chat {chat_id}")
-          PY

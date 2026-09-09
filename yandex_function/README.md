@@ -1,8 +1,9 @@
-# Yandex Cloud Functions version
+# Yandex Cloud timer bridge
 
-This version runs the same monitor inside Yandex Cloud Functions. It uses a
-Serverless YDB table for durable state because function instances are
-stateless and may be replaced between timer invocations.
+Yandex Cloud is used only as a reliable five-minute scheduler. The function
+dispatches a `doctolib_check` event to GitHub; GitHub Actions performs the
+Doctolib request, persists monitor state, evaluates alerts, and sends Telegram
+messages.
 
 ## Package
 
@@ -20,55 +21,21 @@ Create a function version with:
 
 - Runtime: Python 3.12
 - Entry point: `index.handler`
-- Timeout: at least 180 seconds (the request and both Telegram deliveries may
-  retry or approach their individual timeouts)
-- Memory: at least 256 MB
-- An attached service account that can read and write the selected YDB database
+- Timeout: at least 30 seconds
+- Memory: at least 128 MB
+- `GITHUB_RELAY_REPOSITORY=shadrunov/doctolib-monitor`
+- `GITHUB_RELAY_TOKEN` attached from Lockbox
 
-## Persistent state
-
-Create a Serverless YDB database. The function creates the state table
-idempotently on its first invocation; `schema.sql` is also available for
-manual initialization. Set these function environment variables from the
-database endpoint:
-
-- `YDB_ENDPOINT`, for example `grpcs://ydb.serverless.yandexcloud.net:2135`
-- `YDB_DATABASE`, the database path beginning with `/ru-central1/...`
-- `YDB_TABLE=doctolib_monitor_state`
-- `STATE_KEY=default` (optional)
-
-The function uses the attached service account through Yandex's metadata
-credentials; no static YDB access key is required.
-
-## Telegram variables
-
-Set:
-
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHAT_IDS`, a comma-separated list of numeric chat IDs
-
-Store both values in Yandex Lockbox and attach them to the function as secret
-environment variables. Grant `lockbox.payloadViewer` only on that secret to
-the function's service account.
-
-Yandex Cloud cannot currently reach Telegram's Bot API reliably from its
-serverless runtime. The deployed setup therefore stores `GITHUB_RELAY_TOKEN`
-in Lockbox and sets `GITHUB_RELAY_REPOSITORY=shadrunov/doctolib-monitor`.
-Alerts produce an authenticated `repository_dispatch`; the GitHub Actions
-`telegram-relay` job delivers the message to every configured Telegram chat.
-The token needs access only to this repository's Actions/workflow events.
+The fine-grained GitHub token should be limited to this repository with only
+the permission required to create repository dispatch events.
 
 ## Five-minute trigger
 
-Create a Timer trigger for the function with this UTC cron expression:
+Create a Timer trigger with this UTC cron expression:
 
 ```text
 0/5 * * * ? *
 ```
 
-Attach a service account allowed to invoke the function. Configure retries if
-desired; Telegram or YDB failures are raised so the timer can retry them.
-
-The first successful invocation establishes the dynamic baseline. Later
-invocations notify every configured Telegram chat about an earlier slot, an
-HTTP failure transition, or recovery.
+Attach a service account allowed to invoke the function. The GitHub workflow
+handles request retries, state, and notification policy.
