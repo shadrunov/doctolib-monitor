@@ -2,7 +2,7 @@
 
 This repository performs the supplied Doctolib request directly in Python on
 GitHub Actions every five minutes. It uses a Chrome-compatible TLS and HTTP
-fingerprint plus the original anonymous browser cookie. Its `start_date` is generated in the Berlin
+fingerprint. Its `start_date` is generated in the Berlin
 timezone on every run. The first successful run records the current `next_slot` as a
 dynamic baseline. A Telegram message is sent whenever a subsequent successful
 response contains a strictly earlier slot.
@@ -13,7 +13,6 @@ is invalid. A recovery message is sent when valid HTTP 200 responses resume.
 
 The workflow needs these encrypted repository secrets:
 
-- `DOCTOLIB_COOKIE`: anonymous cookie header copied from the browser request
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token
 - `TELEGRAM_CHAT_IDS`: comma-separated numeric chat IDs for every recipient
 

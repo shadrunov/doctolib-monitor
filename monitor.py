@@ -69,9 +69,6 @@ def fetch_doctolib() -> tuple[int, bytes, str]:
             "Sec-Fetch-User": "?1",
             "Upgrade-Insecure-Requests": "1",
     }
-    cookie = os.environ.get("DOCTOLIB_COOKIE", "").strip()
-    if cookie:
-        headers["Cookie"] = cookie
     try:
         response = requests.get(
             DOCTOLIB_URL,
