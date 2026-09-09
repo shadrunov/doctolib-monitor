@@ -26,8 +26,10 @@ Create a function version with:
 
 ## Persistent state
 
-Create a Serverless YDB database and run `schema.sql` in its query editor. Set
-these function environment variables from the database endpoint:
+Create a Serverless YDB database. The function creates the state table
+idempotently on its first invocation; `schema.sql` is also available for
+manual initialization. Set these function environment variables from the
+database endpoint:
 
 - `YDB_ENDPOINT`, for example `grpcs://ydb.serverless.yandexcloud.net:2135`
 - `YDB_DATABASE`, the database path beginning with `/ru-central1/...`
@@ -44,15 +46,16 @@ Set:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_IDS`, a comma-separated list of numeric chat IDs
 
-Use Yandex Lockbox references instead of plain environment values if the cloud
-folder's security policy requires centralized secret management.
+Store both values in Yandex Lockbox and attach them to the function as secret
+environment variables. Grant `lockbox.payloadViewer` only on that secret to
+the function's service account.
 
 ## Five-minute trigger
 
 Create a Timer trigger for the function with this UTC cron expression:
 
 ```text
-*/5 * * * ? *
+0/5 * * * ? *
 ```
 
 Attach a service account allowed to invoke the function. Configure retries if

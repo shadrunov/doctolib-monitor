@@ -12,6 +12,7 @@ from monitor import evaluate, fetch_doctolib, send_telegram, telegram_chat_ids
 
 _driver = None
 _pool = None
+_schema_ready = False
 
 
 def _table_name() -> str:
@@ -37,7 +38,31 @@ def _session_pool():
     return _pool
 
 
+def _ensure_schema() -> None:
+    """Create the state table once for a new function instance."""
+    global _schema_ready
+    if _schema_ready:
+        return
+
+    table = _table_name()
+
+    def operation(session):
+        return session.execute_scheme(
+            f"""
+            CREATE TABLE IF NOT EXISTS `{table}` (
+                state_key Utf8 NOT NULL,
+                state_json Utf8 NOT NULL,
+                PRIMARY KEY (state_key)
+            );
+            """
+        )
+
+    _session_pool().retry_operation_sync(operation)
+    _schema_ready = True
+
+
 def load_state() -> dict[str, Any]:
+    _ensure_schema()
     table = _table_name()
     state_key = os.environ.get("STATE_KEY", "default")
 
@@ -48,8 +73,9 @@ def load_state() -> dict[str, Any]:
             FROM `{table}`
             WHERE state_key = $state_key;
         """
+        prepared = session.prepare(query)
         return session.transaction().execute(
-            query, {"$state_key": state_key}, commit_tx=True
+            prepared, {"$state_key": state_key}, commit_tx=True
         )
 
     result_sets = _session_pool().retry_operation_sync(operation)
@@ -74,8 +100,9 @@ def save_state(state: dict[str, Any]) -> None:
             UPSERT INTO `{table}` (state_key, state_json)
             VALUES ($state_key, $state_json);
         """
+        prepared = session.prepare(query)
         return session.transaction().execute(
-            query,
+            prepared,
             {"$state_key": state_key, "$state_json": state_json},
             commit_tx=True,
         )
