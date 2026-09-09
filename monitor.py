@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 
@@ -33,6 +33,7 @@ RETRY_DELAYS_SECONDS = (2, 5)
 class Notification:
     message: str
     silent: bool = False
+    slot_found: bool = False
 
 
 class TelegramRecipientUnavailable(RuntimeError):
@@ -150,7 +151,7 @@ def send_telegram(
 def send_telegram_to_all(token: str, notification: Notification) -> int:
     """Deliver to every reachable chat without one blocked user stopping others."""
     sent = 0
-    for chat_id in telegram_chat_ids():
+    for chat_id in telegram_chat_ids(notification):
         try:
             send_telegram(token, chat_id, notification.message, notification.silent)
             sent += 1
@@ -159,8 +160,13 @@ def send_telegram_to_all(token: str, notification: Notification) -> int:
     return sent
 
 
-def telegram_chat_ids() -> list[str]:
-    raw = os.environ["TELEGRAM_CHAT_IDS"]
+def telegram_chat_ids(notification: Optional[Notification] = None) -> list[str]:
+    variable = (
+        "TELEGRAM_SLOT_CHAT_IDS"
+        if notification is not None and notification.slot_found
+        else "TELEGRAM_ALERT_CHAT_IDS"
+    )
+    raw = os.environ.get(variable) or os.environ["TELEGRAM_CHAT_IDS"]
     chat_ids = [item.strip() for item in raw.split(",") if item.strip()]
     if not chat_ids:
         raise ValueError("TELEGRAM_CHAT_IDS must contain at least one chat ID")
@@ -251,7 +257,8 @@ def evaluate(
                 messages.append(
                     Notification(
                         "🎉 Earlier Doctolib slot found!\n"
-                        f"New: {next_slot}\nPrevious: {previous_slot}"
+                        f"New: {next_slot}\nPrevious: {previous_slot}",
+                        slot_found=True,
                     )
                 )
         except ValueError:

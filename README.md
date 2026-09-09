@@ -15,10 +15,12 @@ also silent. Earlier-slot alerts use a normal Telegram notification.
 One user blocking the bot is logged and skipped without preventing delivery to
 the other configured chats.
 
-The workflow needs these encrypted repository secrets:
+The workflow needs this encrypted repository secret:
 
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token
-- `TELEGRAM_CHAT_IDS`: comma-separated numeric chat IDs for every recipient
+
+Recipient routing is configured in the workflow: chat `REDACTED_TELEGRAM_CHAT_ID` receives all
+messages, while chat `REDACTED_TELEGRAM_CHAT_ID` receives only earlier-slot alerts.
 
 The local `request` and `token` files are intentionally ignored because they
 contain credentials. The workflow has no GitHub cron schedule; Yandex Cloud is

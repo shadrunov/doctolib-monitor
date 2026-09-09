@@ -39,6 +39,7 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual(len(messages), 1)
         self.assertIn("Earlier", messages[0].message)
         self.assertFalse(messages[0].silent)
+        self.assertTrue(messages[0].slot_found)
 
     def test_same_or_later_slot_does_not_alert(self):
         previous = {
@@ -172,6 +173,21 @@ class RequestRetryTests(unittest.TestCase):
 
         self.assertEqual(sent, 1)
         self.assertEqual(send.call_count, 2)
+
+    @patch.dict(
+        "os.environ",
+        {
+            "TELEGRAM_ALERT_CHAT_IDS": "primary",
+            "TELEGRAM_SLOT_CHAT_IDS": "primary,slot-only",
+        },
+        clear=False,
+    )
+    def test_recipient_routing(self):
+        operational = Notification("failure", silent=True)
+        slot = Notification("earlier", slot_found=True)
+
+        self.assertEqual(telegram_chat_ids(operational), ["primary"])
+        self.assertEqual(telegram_chat_ids(slot), ["primary", "slot-only"])
 
 
 if __name__ == "__main__":
