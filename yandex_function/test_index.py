@@ -14,6 +14,22 @@ class HandlerTests(unittest.TestCase):
         },
         clear=False,
     )
+    @patch("yandex_function.index.send_telegram")
+    def test_explicit_telegram_test_notifies_every_chat(self, send):
+        response = index.handler({"telegram_test": True}, object())
+
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(json.loads(response["body"])["notifications_sent"], 2)
+        self.assertEqual(send.call_count, 2)
+
+    @patch.dict(
+        "os.environ",
+        {
+            "TELEGRAM_BOT_TOKEN": "test-token",
+            "TELEGRAM_CHAT_IDS": "123,456",
+        },
+        clear=False,
+    )
     @patch("yandex_function.index.save_state")
     @patch("yandex_function.index.send_telegram")
     @patch("yandex_function.index.fetch_doctolib")

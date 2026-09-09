@@ -20,7 +20,8 @@ Create a function version with:
 
 - Runtime: Python 3.12
 - Entry point: `index.handler`
-- Timeout: at least 60 seconds
+- Timeout: at least 180 seconds (the request and both Telegram deliveries may
+  retry or approach their individual timeouts)
 - Memory: at least 256 MB
 - An attached service account that can read and write the selected YDB database
 
@@ -49,6 +50,13 @@ Set:
 Store both values in Yandex Lockbox and attach them to the function as secret
 environment variables. Grant `lockbox.payloadViewer` only on that secret to
 the function's service account.
+
+Yandex Cloud cannot currently reach Telegram's Bot API reliably from its
+serverless runtime. The deployed setup therefore stores `GITHUB_RELAY_TOKEN`
+in Lockbox and sets `GITHUB_RELAY_REPOSITORY=shadrunov/doctolib-monitor`.
+Alerts produce an authenticated `repository_dispatch`; the GitHub Actions
+`telegram-relay` job delivers the message to every configured Telegram chat.
+The token needs access only to this repository's Actions/workflow events.
 
 ## Five-minute trigger
 

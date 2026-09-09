@@ -7,7 +7,13 @@ import os
 import re
 from typing import Any
 
-from monitor import evaluate, fetch_doctolib, send_telegram, telegram_chat_ids
+from monitor import (
+    evaluate,
+    fetch_doctolib,
+    send_github_relay,
+    send_telegram,
+    telegram_chat_ids,
+)
 
 
 _driver = None
@@ -110,17 +116,41 @@ def save_state(state: dict[str, Any]) -> None:
     _session_pool().retry_operation_sync(operation)
 
 
+def _notify(message: str) -> int:
+    chat_ids = telegram_chat_ids()
+    relay_token = os.environ.get("GITHUB_RELAY_TOKEN")
+    if relay_token:
+        send_github_relay(
+            relay_token,
+            os.environ.get("GITHUB_RELAY_REPOSITORY", "shadrunov/doctolib-monitor"),
+            message,
+        )
+        return len(chat_ids)
+
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    for chat_id in chat_ids:
+        send_telegram(token, chat_id, message)
+    return len(chat_ids)
+
+
 def handler(event, context):
     """Run one monitor check. Entry point: ``index.handler``."""
+    if isinstance(event, dict) and event.get("telegram_test") is True:
+        notification_count = _notify("✅ Doctolib monitor deployment test succeeded.")
+        result = {
+            "telegram_test": True,
+            "notifications_sent": notification_count,
+        }
+        print(json.dumps(result, sort_keys=True))
+        return {"statusCode": 200, "body": json.dumps(result)}
+
     previous = load_state()
     status, body, request_error = fetch_doctolib()
     current, messages = evaluate(previous, status, body, request_error)
 
     if messages:
-        token = os.environ["TELEGRAM_BOT_TOKEN"]
         for message in messages:
-            for chat_id in telegram_chat_ids():
-                send_telegram(token, chat_id, message)
+            _notify(message)
 
     changed = current != previous
     if changed:

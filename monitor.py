@@ -6,9 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import tempfile
-import urllib.parse
-import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -83,14 +82,41 @@ def fetch_doctolib() -> tuple[int, bytes, str]:
 
 
 def send_telegram(token: str, chat_id: str, message: str) -> None:
-    data = urllib.parse.urlencode({"chat_id": chat_id, "text": message}).encode()
-    request = urllib.request.Request(
-        f"https://api.telegram.org/bot{token}/sendMessage", data=data, method="POST"
+    from curl_cffi import requests
+
+    response = requests.post(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        data={"chat_id": chat_id, "text": message},
+        impersonate="chrome",
+        timeout=30,
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        payload = json.load(response)
+    response.raise_for_status()
+    payload = response.json()
     if not payload.get("ok"):
         raise RuntimeError(f"Telegram rejected the message: {payload}")
+
+
+def send_github_relay(token: str, repository: str, message: str) -> None:
+    """Ask GitHub Actions to deliver a Telegram alert from outside Yandex."""
+    from curl_cffi import requests
+
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        raise ValueError("GITHUB_RELAY_REPOSITORY must be owner/repository")
+    response = requests.post(
+        f"https://api.github.com/repos/{repository}/dispatches",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        json={
+            "event_type": "doctolib_alert",
+            "client_payload": {"message": message},
+        },
+        impersonate="chrome",
+        timeout=30,
+    )
+    response.raise_for_status()
 
 
 def telegram_chat_ids() -> list[str]:
