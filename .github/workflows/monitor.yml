@@ -1,0 +1,43 @@
+name: Monitor Doctolib slot
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: doctolib-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore monitor state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: doctolib-state-${{ github.run_id }}
+          restore-keys: |
+            doctolib-state-
+
+      - name: Run monitor
+        id: monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 monitor.py --state-file .state/state.json
+
+      - name: Save monitor state when changed
+        if: steps.monitor.outputs.state_changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .state
+          key: doctolib-state-${{ github.run_id }}
