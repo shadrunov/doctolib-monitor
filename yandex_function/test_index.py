@@ -14,18 +14,13 @@ class HandlerTests(unittest.TestCase):
         },
         clear=False,
     )
-    @patch("yandex_function.index.send_github_dispatch")
+    @patch("yandex_function.index.dispatch_github_monitor")
     def test_handler_dispatches_github_monitor(self, dispatch):
         response = index.handler({}, object())
 
         self.assertEqual(response["statusCode"], 200)
         self.assertTrue(json.loads(response["body"])["dispatched"])
-        dispatch.assert_called_once_with(
-            "test-token",
-            "owner/repository",
-            "doctolib_check",
-            {"source": "yandex_timer"},
-        )
+        dispatch.assert_called_once_with()
 
 
 if __name__ == "__main__":

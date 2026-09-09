@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import tempfile
 import time
 from dataclasses import dataclass
@@ -129,46 +128,6 @@ def send_telegram(
                 raise RuntimeError(f"Telegram rejected the message: {payload}")
             return
         except (requests.errors.RequestsError, RuntimeError) as exc:
-            last_error = exc
-        if attempt + 1 < attempts:
-            time.sleep(RETRY_DELAYS_SECONDS[min(attempt, len(RETRY_DELAYS_SECONDS) - 1)])
-    assert last_error is not None
-    raise last_error
-
-
-def send_github_dispatch(
-    token: str, repository: str, event_type: str, payload: dict[str, Any]
-) -> None:
-    """Ask GitHub Actions to run work through a repository dispatch event."""
-    from curl_cffi import requests
-
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
-        raise ValueError("GITHUB_RELAY_REPOSITORY must be owner/repository")
-    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", event_type):
-        raise ValueError("GitHub dispatch event_type is invalid")
-    attempts = int(os.environ.get("REQUEST_ATTEMPTS", str(DEFAULT_REQUEST_ATTEMPTS)))
-    if attempts < 1:
-        raise ValueError("REQUEST_ATTEMPTS must be at least 1")
-    last_error = None
-    for attempt in range(attempts):
-        try:
-            response = requests.post(
-                f"https://api.github.com/repos/{repository}/dispatches",
-                headers={
-                    "Accept": "application/vnd.github+json",
-                    "Authorization": f"Bearer {token}",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-                json={
-                    "event_type": event_type,
-                    "client_payload": payload,
-                },
-                impersonate="chrome",
-                timeout=30,
-            )
-            response.raise_for_status()
-            return
-        except requests.errors.RequestsError as exc:
             last_error = exc
         if attempt + 1 < attempts:
             time.sleep(RETRY_DELAYS_SECONDS[min(attempt, len(RETRY_DELAYS_SECONDS) - 1)])

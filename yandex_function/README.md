@@ -13,7 +13,6 @@ Build a flat ZIP archive from the repository root:
 mkdir -p dist
 zip -j dist/doctolib-yandex-function.zip \
   yandex_function/index.py \
-  monitor.py \
   yandex_function/requirements.txt
 ```
 
