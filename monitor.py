@@ -184,12 +184,18 @@ def failure_threshold() -> int:
     return threshold
 
 
+def slot_cutoff() -> Optional[datetime]:
+    raw = os.environ.get("SLOT_CUTOFF")
+    return parse_slot(raw) if raw else None
+
+
 def evaluate(
     previous: dict[str, Any],
     status: int,
     body: bytes,
     curl_error: str,
     non_200_threshold: int = DEFAULT_FAILURE_THRESHOLD,
+    cutoff: Optional[datetime] = None,
 ) -> tuple[dict[str, Any], list[Notification]]:
     if non_200_threshold < 1:
         raise ValueError("non_200_threshold must be at least 1")
@@ -251,18 +257,25 @@ def evaluate(
         )
 
     previous_slot = previous.get("next_slot")
+    previous_dt = None
     if isinstance(previous_slot, str):
         try:
-            if current_dt < parse_slot(previous_slot):
-                messages.append(
-                    Notification(
-                        "🎉 Earlier Doctolib slot found!\n"
-                        f"New: {next_slot}\nPrevious: {previous_slot}",
-                        slot_found=True,
-                    )
-                )
+            previous_dt = parse_slot(previous_slot)
         except ValueError:
             pass
+
+    is_new_earlier_slot = previous_dt is None or current_dt < previous_dt
+    is_before_cutoff = cutoff is None or current_dt < cutoff
+    has_comparison_target = previous_dt is not None or cutoff is not None
+    if is_new_earlier_slot and is_before_cutoff and has_comparison_target:
+        comparison = previous_slot if previous_dt is not None else cutoff.isoformat()
+        messages.append(
+            Notification(
+                "🎉 Earlier Doctolib slot found!\n"
+                f"New: {next_slot}\nPrevious/cutoff: {comparison}",
+                slot_found=True,
+            )
+        )
 
     state = {"health": "ok", "http_status": 200, "next_slot": next_slot}
     return state, messages
@@ -285,7 +298,7 @@ def main() -> int:
     status, body, curl_error = fetch_doctolib()
 
     current, messages = evaluate(
-        previous, status, body, curl_error, failure_threshold()
+        previous, status, body, curl_error, failure_threshold(), slot_cutoff()
     )
     changed = current != previous
 

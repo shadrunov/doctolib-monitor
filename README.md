@@ -4,9 +4,9 @@ This repository performs the supplied Doctolib request in GitHub Actions. A
 Yandex Cloud timer invokes a small function every five minutes; that function
 dispatches the GitHub workflow. The monitor uses a Chrome-compatible TLS and
 HTTP fingerprint and generates `start_date` in the Berlin timezone on every
-run. The first successful run records the current `next_slot` as a dynamic
-baseline. A Telegram message is sent whenever a subsequent successful response
-contains a strictly earlier slot.
+run. The workflow currently targets slots strictly before October 5, 2026 and
+records every observed `next_slot` as a dynamic baseline. A Telegram message is
+sent when a qualifying slot is newly earlier than the previous observation.
 
 Doctolib and Telegram requests are attempted up to three times. One silent
 failure alert is sent after 10 consecutive scheduled checks end with a non-200

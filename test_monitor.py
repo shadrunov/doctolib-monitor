@@ -9,6 +9,7 @@ from monitor import (
     fetch_doctolib,
     send_telegram,
     send_telegram_to_all,
+    parse_slot,
     telegram_chat_ids,
 )
 
@@ -53,6 +54,49 @@ class EvaluateTests(unittest.TestCase):
         )
         self.assertEqual(same, [])
         self.assertEqual(later, [])
+
+    def test_cutoff_suppresses_earlier_slot_on_or_after_october_fifth(self):
+        previous = {
+            "health": "ok",
+            "http_status": 200,
+            "next_slot": "2026-10-08T16:45:00+02:00",
+        }
+        cutoff = parse_slot("2026-10-05T00:00:00+02:00")
+
+        _, on_cutoff = evaluate(
+            previous,
+            200,
+            response("2026-10-05T00:00:00+02:00"),
+            "",
+            cutoff=cutoff,
+        )
+        _, after_cutoff = evaluate(
+            previous,
+            200,
+            response("2026-10-06T09:00:00+02:00"),
+            "",
+            cutoff=cutoff,
+        )
+        self.assertEqual(on_cutoff, [])
+        self.assertEqual(after_cutoff, [])
+
+    def test_cutoff_alerts_for_slot_before_october_fifth(self):
+        previous = {
+            "health": "ok",
+            "http_status": 200,
+            "next_slot": "2026-10-08T16:45:00+02:00",
+        }
+        _, messages = evaluate(
+            previous,
+            200,
+            response("2026-10-04T09:00:00+02:00"),
+            "",
+            cutoff=parse_slot("2026-10-05T00:00:00+02:00"),
+        )
+
+        self.assertEqual(len(messages), 1)
+        self.assertTrue(messages[0].slot_found)
+        self.assertFalse(messages[0].silent)
 
     def test_http_failure_alerts_on_tenth_consecutive_failure(self):
         state = {
