@@ -46,8 +46,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.telegram_test != true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_ALERT_CHAT_IDS: "REDACTED_TELEGRAM_CHAT_ID"
-          TELEGRAM_SLOT_CHAT_IDS: "REDACTED_TELEGRAM_CHAT_ID,REDACTED_TELEGRAM_CHAT_ID"
+          TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_ID }}
           FAILURE_THRESHOLD: "10"
           REQUEST_ATTEMPTS: "3"
           SLOT_CUTOFF: "2026-10-07T00:00:00+02:00"
@@ -58,8 +57,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.telegram_test == true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_ALERT_CHAT_IDS: "REDACTED_TELEGRAM_CHAT_ID"
-          TELEGRAM_SLOT_CHAT_IDS: "REDACTED_TELEGRAM_CHAT_ID,REDACTED_TELEGRAM_CHAT_ID"
+          TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_ID }}
           REQUEST_ATTEMPTS: "3"
         run: |
           python3 - <<'PY'

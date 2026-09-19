@@ -12,15 +12,16 @@ Doctolib and Telegram requests are attempted up to three times. One silent
 failure alert is sent after 10 consecutive scheduled checks end with a non-200
 response. Invalid HTTP 200 responses and recovery after an alerted failure are
 also silent. Earlier-slot alerts use a normal Telegram notification.
-One user blocking the bot is logged and skipped without preventing delivery to
-the other configured chats.
+Telegram delivery failures are reported by the workflow without exposing the
+recipient ID in repository configuration.
 
-The workflow needs this encrypted repository secret:
+The workflow needs these encrypted repository secrets:
 
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token
+- `TELEGRAM_CHAT_ID`: the sole recipient chat ID
 
-Recipient routing is configured in the workflow: chat `REDACTED_TELEGRAM_CHAT_ID` receives all
-messages, while chat `REDACTED_TELEGRAM_CHAT_ID` receives only earlier-slot alerts.
+All operational and earlier-slot messages go to that one recipient. Operational
+messages remain silent, while earlier-slot alerts use a normal notification.
 
 The local `request` and `token` files are intentionally ignored because they
 contain credentials. The workflow has no GitHub cron schedule; Yandex Cloud is
